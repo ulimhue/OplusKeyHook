@@ -1,16 +1,23 @@
 package me.siowu.OplusKeyHook;
 
 import android.app.AlertDialog;
+import android.content.Context;
+import android.content.Intent;
 import android.os.Bundle;
 import android.util.Log;
+import android.graphics.drawable.Drawable;
 import android.view.View;
 import android.widget.*;
+
+import com.google.android.material.button.MaterialButton;
 
 import androidx.appcompat.app.AppCompatActivity;
 
 import java.io.BufferedReader;
 import java.io.InputStreamReader;
 
+import de.robv.android.xposed.XposedBridge;
+import de.robv.android.xposed.XposedHelpers;
 import me.siowu.OplusKeyHook.utils.SPUtils;
 
 public class MainActivity extends AppCompatActivity {
@@ -18,7 +25,7 @@ public class MainActivity extends AppCompatActivity {
     private Spinner spinnerGesture, spinnerType, spinnerCommon;
     private EditText editPackage, editActivity, editUrlScheme, editxiaobuShortcuts, editShell;
     private LinearLayout layoutCommon, layoutCustomActivity, layoutUrlScheme, layoutxiaobuShortcuts, layoutShell;
-    private Button btnSave;
+    private Button btnSave, btnDonate;
     private CheckBox checkboxVibrate, checkboxExecuteWhenScreenOff;
 
     @Override
@@ -54,6 +61,7 @@ public class MainActivity extends AppCompatActivity {
         checkboxVibrate = findViewById(R.id.checkboxVibrate);
         checkboxExecuteWhenScreenOff = findViewById(R.id.checkboxExecuteWhenScreenOff);
         btnSave = findViewById(R.id.btnSave);
+        btnDonate = findViewById(R.id.btnDonate);
 
         // 手势选择
         ArrayAdapter<String> adapterGesture = new ArrayAdapter<>(
@@ -73,7 +81,7 @@ public class MainActivity extends AppCompatActivity {
 
         ArrayAdapter<String> adapterCommon = new ArrayAdapter<>(
                 this, android.R.layout.simple_spinner_item,
-                new String[]{"微信付款码", "微信扫一扫", "支付宝付款码", "支付宝扫一扫", "云闪付付款码", "云闪付扫一扫", "一键闪记", "小布记忆"}
+                new String[]{"微信付款码", "微信扫一扫", "支付宝付款码", "支付宝扫一扫", "一键闪记", "小布记忆"}
         );
         adapterCommon.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);
         spinnerCommon.setAdapter(adapterCommon);
@@ -102,6 +110,7 @@ public class MainActivity extends AppCompatActivity {
         });
 
         btnSave.setOnClickListener(v -> saveConfig());
+        btnDonate.setOnClickListener(v -> showDonateDialog());
 
         loadGestureConfig(0); // 默认加载【短按】
     }
@@ -143,11 +152,6 @@ public class MainActivity extends AppCompatActivity {
 
         String type = (String) spinnerType.getSelectedItem();
         if (type.equals("自定义Shell命令")) {
-            if (applyRootPermission()) {
-                Toast.makeText(this, "已被授予Root权限", Toast.LENGTH_SHORT).show();
-            } else {
-                Toast.makeText(this, "已被拒绝Root权限，无法执行Shell命令", Toast.LENGTH_SHORT).show();
-            }
             showShellPermissionDialog();
         }
 
@@ -210,44 +214,53 @@ public class MainActivity extends AppCompatActivity {
         }
     }
 
-    public boolean applyRootPermission() {
-        Process process = null;
-        try {
-            // 测试执行一条简单命令
-            process = Runtime.getRuntime().exec("su -c echo root_ok");
-            BufferedReader br = new BufferedReader(new InputStreamReader(process.getInputStream()));
-            String result = br.readLine();
-            return "root_ok".equals(result);  // 成功执行
-        } catch (Exception e) {
-            return false;
-        } finally {
-            if (process != null) process.destroy();
-        }
+    public void applyRootPermission() {
+        Intent intent = new Intent("me.siowu.OplusKeyHook.TRIGGER");
+        intent.putExtra("cmd", "su");
+        sendBroadcast(intent);
     }
 
     private void showShellPermissionDialog() {
         new AlertDialog.Builder(this)
                 .setTitle("提示")
-                .setMessage("由于系统限制，执行Shell命令需要Root权限和自启动权限，否则无法执行。\n应用只会在执行命令的瞬间启动，执行完毕后自动退出，不会占用后台内存。\n在某些情况下，你可能还需要在应用详情的耗电管理中完全允许后台行为。")
+                .setMessage("由于系统限制，执行Shell命令需要Root权限，否则无法执行。\n\n为避免后台限制导致命令无法被及时执行，模块现改用新方案: 委托「系统桌面」执行命令，请按照以下步骤授予权限: \n1. 在 LSPosed 等管理器中将模块作用域勾选「系统桌面」并长按强行停止。\n2. 完成上一步之后，点击下方按钮授予Root权限。\n\n如已授权请忽略本提示。")
                 .setCancelable(false)
-                .setNegativeButton("去授权", (dialog, which) -> {
-                    // 继续执行跳转逻辑
-                    gotoColorOSAutoStart();        // 自启动管理
+                .setNegativeButton("授予Root权限", (dialog, which) -> {
+                    applyRootPermission();
                 })
-                .setPositiveButton("确定", null)
+//                .setPositiveButton("确定", null)
                 .show();
     }
 
-    private void gotoColorOSAutoStart() {
+    private void showDonateDialog() {
+        ImageView imageView = new ImageView(this);
         try {
-            Runtime.getRuntime().exec(new String[]{
-                    "su", "-c",
-                    "am start -n com.oplus.battery/com.oplus.startupapp.view.StartupAppListActivity"
-            });
+            java.io.InputStream is = getAssets().open("wechat.png");
+            Drawable drawable = Drawable.createFromStream(is, null);
+            imageView.setImageDrawable(drawable);
+            is.close();
         } catch (Exception e) {
-            Log.e("gotoColorOSAutoStart", e.getMessage());
+            Log.e("OplusKeyHook", "加载微信付款码图片失败: " + e.getMessage());
+            return;
         }
-    }
+        int dp240 = (int) (240 * getResources().getDisplayMetrics().density);
+        imageView.setLayoutParams(new LinearLayout.LayoutParams(dp240, dp240));
 
+        LinearLayout layout = new LinearLayout(this);
+        layout.setOrientation(LinearLayout.VERTICAL);
+        layout.setPadding(
+                (int) (32 * getResources().getDisplayMetrics().density),
+                (int) (24 * getResources().getDisplayMetrics().density),
+                (int) (32 * getResources().getDisplayMetrics().density),
+                0
+        );
+        layout.addView(imageView);
+
+        new AlertDialog.Builder(this)
+                .setTitle("投喂我~")
+                .setView(layout)
+                .setPositiveButton("关闭", null)
+                .show();
+    }
 
 }

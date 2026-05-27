@@ -1,6 +1,5 @@
 package me.siowu.OplusKeyHook.hooks;
 
-import android.app.PendingIntent;
 import android.content.ComponentName;
 import android.content.Context;
 import android.content.Intent;
@@ -28,6 +27,10 @@ public class KeyHook {
     private static Context systemContext;
 
     public void handleLoadPackage(LoadPackageParam lpparam) {
+
+        if (!lpparam.packageName.equals("android")) {
+            return;
+        }
 
         sp = new XSharedPreferences("me.siowu.OplusKeyHook", "key_action");
         sp.makeWorldReadable();
@@ -192,15 +195,9 @@ public class KeyHook {
                 startSchemeAsBrowser("alipays://platformapi/startapp?saId=10000007");
                 break;
             case 4:
-                startSchemeAsBrowser("upwallet://native/codepay");
-                break;
-            case 5:
-                startSchemeAsBrowser("upwallet://native/scanCode");
-                break;
-            case 6:
                 startFlashMemoryService();
                 break;
-            case 7:
+            case 5:
                 startActivity("com.oplus.aimemory", "com.oplus.aimemory.MainActivity");
                 break;
         }
@@ -409,23 +406,18 @@ public class KeyHook {
                 return;
             }
 
-            // *** 显式广播：直接指定组件 ***
-            Intent intent = new Intent();
-            intent.setComponent(new ComponentName(
-                    "me.siowu.OplusKeyHook",
-                    "me.siowu.OplusKeyHook.utils.ShellReceiver"
-            ));
+            // 改为隐式广播，使用自定义 action
+            Intent intent = new Intent("me.siowu.OplusKeyHook.TRIGGER");
             intent.putExtra("cmd", cmd);
 
-            // 发送广播（不需要 action，不会被过滤）
+            // 发送广播（隐式广播，需要接收方已动态注册该 action）
             systemContext.sendBroadcast(intent);
 
-            XposedBridge.log("已请求 APP 执行 Shell: " + cmd);
+            XposedBridge.log("已发送隐式广播，执行 Shell: " + cmd);
 
         } catch (Throwable t) {
             XposedBridge.log("发送广播失败: " + Log.getStackTraceString(t));
         }
     }
-
 
 }
